@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>restore-session</h1>
+  <h1>Restore-session</h1>
   <p><strong>在一个终端中浏览 Codex、Claude Code、OpenCode 与 Pi 的全部会话——选中任意一个，一键切回去继续。</strong></p>
   <p>
     <a href="https://github.com/zzusec/restore-session/releases/latest"><img src="https://img.shields.io/github/v/release/zzusec/restore-session?label=release" alt="最新版本"></a>

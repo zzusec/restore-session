@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>restore-session</h1>
+  <h1>Restore-session</h1>
   <p><strong>Browse your Codex, Claude Code, OpenCode, and Pi sessions from one terminal — and jump straight back into any of them with one key.</strong></p>
   <p>
     <a href="https://github.com/zzusec/restore-session/releases/latest"><img src="https://img.shields.io/github/v/release/zzusec/restore-session?label=release" alt="Latest release"></a>
