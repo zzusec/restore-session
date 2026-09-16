@@ -51,6 +51,7 @@ func (r *record) spoken() bool {
 type details struct {
 	id        string
 	cwd       string
+	cwdCounts map[string]int
 	version   string
 	client    string
 	created   time.Time
@@ -71,7 +72,8 @@ func scan(r io.Reader) details {
 		wantsTitle := bytes.Contains(line, []byte(`"ai-title"`))
 		wantsHead := lineno < headScanLines
 		wantsUser := found.firstUser == "" && bytes.Contains(line, []byte(`"user"`))
-		if !wantsTitle && !wantsHead && !wantsUser {
+		wantsCwd := bytes.Contains(line, []byte(`"cwd"`))
+		if !wantsTitle && !wantsHead && !wantsUser && !wantsCwd {
 			continue
 		}
 
@@ -95,6 +97,15 @@ func scan(r io.Reader) details {
 		}
 		if found.cwd == "" {
 			found.cwd = entry.Cwd
+		}
+		// An agent records its current directory on every turn and moves it as
+		// it cd's around, so tallying the directories a home-launched session
+		// visited is how the project it actually worked on is recovered.
+		if (entry.Type == "user" || entry.Type == "assistant") && entry.Cwd != "" {
+			if found.cwdCounts == nil {
+				found.cwdCounts = make(map[string]int)
+			}
+			found.cwdCounts[entry.Cwd]++
 		}
 		if found.version == "" {
 			found.version = entry.Version

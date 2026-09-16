@@ -46,8 +46,12 @@ var _ agent.Agent = (*Agent)(nil)
 
 // Agent is the Claude Code session store.
 type Agent struct {
-	home string
-	fsys fs.FS
+	// home is the state directory transcripts live in. userHome is the
+	// launch working directory sessions are compared against — the same tree
+	// in the real binary, but a fake state dir in a test.
+	home     string
+	userHome string
+	fsys     fs.FS
 }
 
 // Option adjusts an agent, for tests that supply their own session tree.
@@ -58,10 +62,22 @@ func WithFS(fsys fs.FS) Option {
 	return func(a *Agent) { a.fsys = fsys }
 }
 
+// WithUserHome names the user directory a session was launched from, which
+// project inference matches recorded cwd against. Tests that fake a state
+// directory use it to make the fake tree look like the user's home.
+func WithUserHome(home string) Option {
+	return func(a *Agent) {
+		if home != "" {
+			a.userHome = home
+		}
+	}
+}
+
 // New returns the Claude Code agent for home, or for the default location when
 // home is empty.
 func New(home string, opts ...Option) *Agent {
 	a := &Agent{home: agent.Resolve(home, DefaultHome)}
+	a.userHome = agent.UserHome(a.home)
 	for _, opt := range opts {
 		opt(a)
 	}
@@ -180,6 +196,16 @@ func (a *Agent) load(name string) (session.Session, bool) {
 		client = "cli"
 	}
 
+	// The recorded directory is a poor project label when the session was
+	// launched from home: it is then the home directory itself, which says
+	// nothing. The directories the agent actually cd'd into, tallied during
+	// the scan above, say more.
+	cwd := found.cwd
+	project := ""
+	if agent.IsHomeOrEmpty(cwd, a.userHome) && len(found.cwdCounts) > 0 {
+		project = agent.InferProject(a.userHome, found.cwdCounts)
+	}
+
 	return session.Session{
 		Agent:     ID,
 		Path:      filepath.Join(a.home, filepath.FromSlash(name)),
@@ -193,7 +219,8 @@ func (a *Agent) load(name string) (session.Session, bool) {
 		// rather than assigned by the user.
 		Archived: false,
 		Noise:    found.firstUser == "",
-		Cwd:      found.cwd,
+		Cwd:      cwd,
+		Project:  project,
 		Version:  found.version,
 	}, true
 }

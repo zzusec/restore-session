@@ -398,18 +398,27 @@ func SortByRecency(sessions []Session) {
 // never separates a conversation from its tree — it only gathers roots that
 // share a directory.
 //
-// The full working directory is the key, not its last segment: two projects can
-// share a basename without being the same project.
+// The effective working directory is the key, not its last segment: two
+// projects can share a basename without being the same project. An inferred
+// project outranks the recorded working directory, which is usually the home
+// directory the session was launched from.
 func GroupByProject(sessions []Session) []Session {
+	keyOf := func(s Session) string {
+		if s.Project != "" {
+			return s.Project
+		}
+		return s.Cwd
+	}
 	seen := make(map[string]bool)
 	var order []string
 	buckets := make(map[string][]Session)
 	for _, s := range sessions {
-		if !seen[s.Cwd] {
-			seen[s.Cwd] = true
-			order = append(order, s.Cwd)
+		key := keyOf(s)
+		if !seen[key] {
+			seen[key] = true
+			order = append(order, key)
 		}
-		buckets[s.Cwd] = append(buckets[s.Cwd], s)
+		buckets[key] = append(buckets[key], s)
 	}
 	out := make([]Session, 0, len(sessions))
 	for _, cwd := range order {

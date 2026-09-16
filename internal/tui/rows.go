@@ -159,10 +159,11 @@ func (m *Model) projectHeaders() []string {
 		if row.Nested {
 			continue
 		}
-		if row.Session.Cwd != previous {
+		key := effectiveProjectKey(row.Session)
+		if key != previous {
 			headers[i] = projectOf(row.Session)
 		}
-		previous = row.Session.Cwd
+		previous = key
 	}
 	return headers
 }
@@ -284,13 +285,30 @@ func (m *Model) rowFill(cursor, picked bool) lipgloss.Style {
 	return m.theme.Screen
 }
 
-// projectOf is the last segment of a session's working directory, which is
-// enough to tell projects apart without spending the width on a full path.
+// projectOf is the project a session belongs to, which is the last segment of
+// its working directory or an inferred project's name. An inferred project
+// outranks the recorded directory: it points at the project the session
+// worked on rather than the home it was launched from. The inferred name
+// already names the project, so it is used as-is.
 func projectOf(s session.Session) string {
+	if s.Project != "" {
+		return s.Project
+	}
 	if s.Cwd == "" {
 		return ""
 	}
 	return filepath.Base(s.Cwd)
+}
+
+// effectiveProjectKey is the working directory a session belongs to, used to
+// group and label it. An inferred project wins so home-launched sessions sort
+// under the project they actually touched; anything else falls back to the
+// recorded directory.
+func effectiveProjectKey(s session.Session) string {
+	if s.Project != "" {
+		return s.Project
+	}
+	return s.Cwd
 }
 
 // formatBytes renders a session's on-disk size as a right-aligned string that

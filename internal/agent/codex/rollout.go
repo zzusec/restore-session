@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/url"
 	"strings"
 
 	"github.com/zzusec/restore-session/internal/jsonl"
@@ -112,10 +113,10 @@ func parseMessage(line []byte) (session.Message, bool) {
 	return session.Message{}, false
 }
 
-// head reads a rollout's metadata and opening message in one pass. Both live
-// near the start of the file, and reading them together halves the file opens
-// during discovery.
-func head(r io.Reader) (info meta, opening string) {
+// head reads a rollout's metadata and opening message in one pass, and
+// tallies the directories its commands ran in. The tallies let a session that
+// was launched from home be credited to the project it actually worked on.
+func head(r io.Reader) (info meta, opening string, signals map[string]int) {
 	scanner := jsonl.NewScanner(r)
 	for lineno := 0; lineno < titleScanLines && scanner.Scan(); lineno++ {
 		line := scanner.Bytes()
@@ -123,17 +124,62 @@ func head(r io.Reader) (info meta, opening string) {
 			info = parseMeta(line)
 			continue
 		}
+		if cwd := execCwd(line); cwd != "" {
+			if signals == nil {
+				signals = make(map[string]int)
+			}
+			signals[cwd]++
+		}
 		if !bytes.Contains(line, []byte(`"user_message"`)) &&
 			!bytes.Contains(line, []byte(`"UserMessage"`)) {
 			continue
 		}
 		if message, ok := parseMessage(line); ok && message.Role == session.User {
 			if text := strings.TrimSpace(message.Text); text != "" {
-				return info, text
+				return info, text, signals
 			}
 		}
 	}
-	return info, ""
+	return info, "", signals
+}
+
+// execCwd returns the directory a completed command ran in, or "" when the
+// line is not a CommandExecution that records one. The recording uses a
+// file:// URL with percent-encoding, which is undone so the result is a plain
+// path fit for [agent.InferProject].
+func execCwd(line []byte) string {
+	if !bytes.Contains(line, []byte(`"item_completed"`)) ||
+		!bytes.Contains(line, []byte(`"CommandExecution"`)) {
+		return ""
+	}
+	var envelope record
+	if json.Unmarshal(line, &envelope) != nil || envelope.Type != "event_msg" {
+		return ""
+	}
+	var payload struct {
+		Item struct {
+			Cwd string `json:"cwd"`
+		} `json:"item"`
+	}
+	if json.Unmarshal(envelope.Payload, &payload) != nil {
+		return ""
+	}
+	return unescapeFileURL(payload.Item.Cwd)
+}
+
+// unescapeFileURL converts "file:///Users/x/y" to "/Users/x/y", undoing the
+// percent-encoding and the scheme in one cleanup. The scheme comes back when
+// path decoding goes wrong, so the result may still carry a "file://" prefix.
+func unescapeFileURL(raw string) string {
+	const scheme = "file://"
+	if !strings.HasPrefix(raw, scheme) {
+		return ""
+	}
+	decoded, err := url.PathUnescape(raw[len(scheme):])
+	if err != nil {
+		return ""
+	}
+	return decoded
 }
 
 func parseMeta(line []byte) meta {

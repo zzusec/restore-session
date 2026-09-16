@@ -390,6 +390,25 @@ func TestGroupByProject(t *testing.T) {
 		}
 	})
 
+	t.Run("an inferred project splits a shared launch directory", func(t *testing.T) {
+		t.Parallel()
+		// All three launched from the same home directory, but the inferred
+		// projects differ. If the Project field were ignored they would all
+		// share one group and keep arrival order; honouring it splits them:
+		// a2 rejoins the pA group of a1 rather than staying after b1.
+		sessions := []session.Session{
+			cwd("a1", "/Users/x"), // project pA
+			cwd("b1", "/Users/x"), // project pB
+			cwd("a2", "/Users/x"), // project pA
+		}
+		sessions[0].Project = "pA"
+		sessions[1].Project = "pB"
+		sessions[2].Project = "pA"
+		if got := ids(session.GroupByProject(sessions)); got != "a1,a2,b1" {
+			t.Errorf("GroupByProject = %s, want a1,a2,b1 (pA group rejoined)", got)
+		}
+	})
+
 	t.Run("an empty listing stays empty", func(t *testing.T) {
 		t.Parallel()
 		if got := session.GroupByProject(nil); len(got) != 0 {

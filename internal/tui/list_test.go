@@ -708,3 +708,26 @@ func TestFooterOffersOnlyWhatWouldDoSomething(t *testing.T) {
 		contains(t, m, "every recorded source session is still available")
 	})
 }
+
+// An inferred project outranks the recorded working directory: a session
+// launched from home shows the project it actually worked on, and groups under
+// it. The helpers take a plain Session, so they are tested directly.
+func TestInferredProjectDrivesColumnsAndGrouping(t *testing.T) {
+	t.Parallel()
+
+	home := session.Session{Cwd: "/Users/x"}
+	inferred := session.Session{Cwd: "/Users/x", Project: "desktop-pet"}
+
+	if got := projectOf(home); got != "x" {
+		t.Errorf("projectOf(home) = %q, want x (fallback to cwd basename)", got)
+	}
+	if got := projectOf(inferred); got != "desktop-pet" {
+		t.Errorf("projectOf(inferred) = %q, want desktop-pet", got)
+	}
+	if got := effectiveProjectKey(home); got != "/Users/x" {
+		t.Errorf("effectiveProjectKey(home) = %q, want the cwd", got)
+	}
+	if got := effectiveProjectKey(inferred); got != "desktop-pet" {
+		t.Errorf("effectiveProjectKey(inferred) = %q, want the inferred project", got)
+	}
+}

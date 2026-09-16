@@ -53,6 +53,12 @@ type Session struct {
 	Parent string
 	// Cwd is the directory the session ran in.
 	Cwd string
+	// Project is the project the session worked on, inferred from the
+	// conversation when Cwd is the home directory itself or empty. It is a
+	// bare project name (the first directory under the user's home), not a
+	// path, so it doubles as the display label. Empty when nothing could be
+	// inferred, in which case callers fall back to Cwd.
+	Project string
 	// Version is the agent release that wrote it.
 	Version string
 }

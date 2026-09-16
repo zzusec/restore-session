@@ -58,7 +58,11 @@ var (
 
 // Agent is the Codex session store.
 type Agent struct {
+	// home is the state directory rollouts live in (usually ~/.codex).
+	// userHome is the launch working directory commands ran under, the tree
+	// project inference matches recorded cwd against.
 	home      string
+	userHome  string
 	fsys      fs.FS
 	run       execx.Runner
 	installed func() bool
@@ -71,6 +75,17 @@ type Option func(*Agent)
 // WithFS reads sessions from fsys instead of the home directory itself.
 func WithFS(fsys fs.FS) Option {
 	return func(a *Agent) { a.fsys = fsys }
+}
+
+// WithUserHome names the user directory a session was launched from, which
+// project inference matches recorded cwd against. Tests that fake a state
+// directory use it to make the fake tree look like the user's home.
+func WithUserHome(home string) Option {
+	return func(a *Agent) {
+		if home != "" {
+			a.userHome = home
+		}
+	}
 }
 
 // WithRunner sends changes to run rather than the real Codex command, and
@@ -86,6 +101,7 @@ func WithRunner(run execx.Runner) Option {
 // is empty.
 func New(home string, opts ...Option) *Agent {
 	a := &Agent{home: agent.Resolve(home, DefaultHome), run: execx.Run}
+	a.userHome = agent.UserHome(a.home)
 	for _, opt := range opts {
 		opt(a)
 	}
@@ -201,7 +217,7 @@ func (a *Agent) load(path string, archived bool, names map[string]string) (sessi
 	}
 	defer file.Close()
 
-	info, opening := head(file)
+	info, opening, signals := head(file)
 	name := filepath.Base(path)
 	match := rolloutName.FindStringSubmatch(name)
 
@@ -240,6 +256,15 @@ func (a *Agent) load(path string, archived bool, names map[string]string) (sessi
 		parent = info.ForkedFrom
 	}
 
+	// The recorded directory is the launch point, which is the whole home
+	// directory when the session was started there. The directories the
+	// session's own commands actually ran in, tallied while reading the
+	// rollout, point at the project it worked on instead.
+	project := ""
+	if agent.IsHomeOrEmpty(info.Cwd, a.userHome) && len(signals) > 0 {
+		project = agent.InferProject(a.userHome, signals)
+	}
+
 	return session.Session{
 		Agent: ID,
 		Path:  filepath.Join(a.home, filepath.FromSlash(path)),
@@ -256,6 +281,7 @@ func (a *Agent) load(path string, archived bool, names map[string]string) (sessi
 		SideThread: kind == "subagent",
 		Parent:     parent,
 		Cwd:        info.Cwd,
+		Project:    project,
 		Version:    info.CLIVersion,
 	}, true
 }

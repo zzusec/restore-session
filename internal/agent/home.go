@@ -48,3 +48,15 @@ func Resolve(override string, fallback func() string) string {
 	}
 	return ExpandHome(override)
 }
+
+// UserHome returns the current user's home directory, falling back to the
+// agent's own root when the system cannot say. Project inference matches a
+// session's recorded working directories against this, not against the agent's
+// state directory: a cwd of "/Users/x/lib" is a child of the user's home, not
+// of "~/.codex".
+func UserHome(fallback string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return home
+	}
+	return fallback
+}

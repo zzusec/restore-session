@@ -438,3 +438,79 @@ func TestOperationsDelegateToTheCodexCommand(t *testing.T) {
 		}
 	}
 }
+
+// A rollout whose meta records the home directory, but whose commands ran in a
+// project, collects those exec cwds and credits the session to the project.
+
+// discoverInferred reads with a fake user home so the recorded cwds are
+// compared against the same tree the test builds.
+func discoverInferred(t *testing.T, tree fstest.MapFS) []session.Session {
+	t.Helper()
+	found, err := codex.New("/codex", codex.WithFS(tree), codex.WithUserHome("/codex")).Discover(t.Context())
+	if err != nil {
+		t.Fatalf("Discover() = %v", err)
+	}
+	return found
+}
+
+func TestProjectInferredFromCommandCwds(t *testing.T) {
+	t.Parallel()
+
+	// Several projects get visited, but desktop-pet wins on volume.
+	got := only(t, discoverInferred(t, fstest.MapFS{activePath: rollout(
+		meta(`"id":"a","source":"cli","cwd":"/codex"`),
+		completed(`"type":"CommandExecution","id":"c1","command":["cd","desktop-pet"],"cwd":"file:///codex/desktop-pet"`),
+		completed(`"type":"CommandExecution","id":"c2","command":["go","test"],"cwd":"file:///codex/desktop-pet"`),
+		completed(`"type":"CommandExecution","id":"c3","command":["cd","other"],"cwd":"file:///codex/other-proj"`),
+		completed(`"type":"UserMessage","content":[{"type":"text","text":"work"}]`),
+	)}))
+
+	if got.Cwd != "/codex" {
+		t.Errorf("Cwd = %q, want the launch directory", got.Cwd)
+	}
+	if got.Project != "desktop-pet" {
+		t.Errorf("Project = %q, want desktop-pet", got.Project)
+	}
+}
+
+// A rollout launched straight from a project directory needs no inference.
+func TestProjectLeftAloneWhenRollupCwdNamesProject(t *testing.T) {
+	t.Parallel()
+
+	got := only(t, discoverInferred(t, fstest.MapFS{activePath: rollout(
+		meta(`"id":"a","source":"cli","cwd":"/codex/desktop-pet"`),
+	)}))
+
+	if got.Project != "" {
+		t.Errorf("Project = %q, want empty when the launch dir names the project", got.Project)
+	}
+}
+
+// A rollout that never leaves home has no project to infer.
+func TestNoProjectWhenCommandsStayInHome(t *testing.T) {
+	t.Parallel()
+
+	got := only(t, discoverInferred(t, fstest.MapFS{activePath: rollout(
+		meta(`"id":"a","source":"cli","cwd":"/codex"`),
+		completed(`"type":"CommandExecution","id":"c1","command":["ls"],"cwd":"file:///codex"`),
+	)}))
+
+	if got.Project != "" {
+		t.Errorf("Project = %q, want empty when every exec is in home", got.Project)
+	}
+}
+
+// Commands that ran in a dotfile directory must not be mistaken for a project.
+func TestProjectSkipsDotfileDirs(t *testing.T) {
+	t.Parallel()
+
+	got := only(t, discoverInferred(t, fstest.MapFS{activePath: rollout(
+		meta(`"id":"a","source":"cli","cwd":"/codex"`),
+		completed(`"type":"CommandExecution","id":"c1","command":["codex"],"cwd":"file:///codex/.codex"`),
+		completed(`"type":"CommandExecution","id":"c2","command":["codex"],"cwd":"file:///codex/.codex"`),
+	)}))
+
+	if got.Project != "" {
+		t.Errorf("Project = %q, want empty when only dotfile dirs are visited", got.Project)
+	}
+}

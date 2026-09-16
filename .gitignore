@@ -1,5 +1,6 @@
 # Release binaries.
 dist/
+restore-session
 
 .claude/
 .DS_Store
